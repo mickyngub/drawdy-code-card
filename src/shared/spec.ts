@@ -7,10 +7,10 @@ export const THEME_IDS = [
     "solarized-light",
     "monokai",
 ] as const;
-export type ThemeId = typeof THEME_IDS[number];
+export type ThemeId = (typeof THEME_IDS)[number];
 
 export const FONT_IDS = ["jetbrains-mono", "fira-code"] as const;
-export type FontId = typeof FONT_IDS[number];
+export type FontId = (typeof FONT_IDS)[number];
 
 export const GRADIENT_IDS = [
     "mint",
@@ -20,29 +20,29 @@ export const GRADIENT_IDS = [
     "peach",
     "midnight",
 ] as const;
-export type GradientId = typeof GRADIENT_IDS[number];
+export type GradientId = (typeof GRADIENT_IDS)[number];
 
 export const BACKGROUND_IDS = [
     ...GRADIENT_IDS,
     "solid",
     "transparent",
 ] as const;
-export type BackgroundId = typeof BACKGROUND_IDS[number];
+export type BackgroundId = (typeof BACKGROUND_IDS)[number];
 
 export const TAB_SIZES = [2, 4, 8] as const;
-export type TabSize = typeof TAB_SIZES[number];
+export type TabSize = (typeof TAB_SIZES)[number];
 
 export const PADDINGS = [16, 32, 64, 128] as const;
-export type Padding = typeof PADDINGS[number];
+export type Padding = (typeof PADDINGS)[number];
 
 export const CHROMES = ["dots", "none"] as const;
-export type Chrome = typeof CHROMES[number];
+export type Chrome = (typeof CHROMES)[number];
 
 export const SHADOWS = ["none", "soft", "strong"] as const;
-export type Shadow = typeof SHADOWS[number];
+export type Shadow = (typeof SHADOWS)[number];
 
 export const WIDTH_MODES = ["auto", "columns"] as const;
-export type WidthMode = typeof WIDTH_MODES[number];
+export type WidthMode = (typeof WIDTH_MODES)[number];
 
 export const FONT_SIZE = { min: 10, max: 24 };
 export const RADIUS = { min: 0, max: 24 };
@@ -151,6 +151,25 @@ export function normaliseOptions(raw: unknown): CardOptions {
         shadow: oneOf(SHADOWS, got.shadow, d.shadow),
         width: oneOf(WIDTH_MODES, got.width, d.width),
         columns: clampInt(got.columns, COLUMNS, d.columns),
+    };
+}
+
+/** The file name and highlighted lines belong to one card, so they are never remembered. */
+export type RememberedStyle = Omit<CardOptions, "title" | "highlight">;
+
+export function rememberedStyle(options: CardOptions): RememberedStyle {
+    const { title: _title, highlight: _highlight, ...style } = options;
+    return style;
+}
+
+export function restoreStyle(
+    current: CardOptions,
+    saved: unknown
+): CardOptions {
+    return {
+        ...normaliseOptions(saved),
+        title: current.title,
+        highlight: current.highlight,
     };
 }
 

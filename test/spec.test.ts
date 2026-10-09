@@ -5,6 +5,8 @@ import {
     MAX_CODE_LENGTH,
     normaliseOptions,
     normaliseSpec,
+    rememberedStyle,
+    restoreStyle,
     type CardSpec,
 } from "../src/shared/spec";
 
@@ -81,4 +83,24 @@ test("code keeps Unix line endings and the size cap", () => {
         normaliseSpec({ code: "y".repeat(MAX_CODE_LENGTH + 10) })?.code.length,
         MAX_CODE_LENGTH
     );
+});
+
+test("the file name and highlighted lines are never remembered", () => {
+    const saved = rememberedStyle(SPEC.options);
+    assert.equal("title" in saved, false);
+    assert.equal("highlight" in saved, false);
+    assert.equal(saved.theme, "dracula");
+});
+
+test("restoring old settings that still hold a file name keeps the panel's own", () => {
+    const current = { ...DEFAULT_OPTIONS, title: "", highlight: "" };
+    const restored = restoreStyle(current, {
+        ...SPEC.options,
+        title: "session.ts",
+        highlight: "13-25",
+    });
+    assert.equal(restored.title, "");
+    assert.equal(restored.highlight, "");
+    assert.equal(restored.theme, "dracula");
+    assert.equal(restored.padding, 64);
 });
