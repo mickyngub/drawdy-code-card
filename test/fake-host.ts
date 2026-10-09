@@ -23,12 +23,38 @@ type Sent = { type: string; req?: any };
 /** Element rect as the host reports it; elements without x/y/width/height need one passed in. */
 export type RectOf = (el: Stored) => Rect;
 
-const plainRect: RectOf = (el) => ({
-    x: el.x as number,
-    y: el.y as number,
-    width: el.width as number,
-    height: el.height as number,
-});
+/** Points as the host reports them: pairs, whatever shape the element was added with. */
+export function pointsOf(el: Stored): [number, number][] {
+    if (Array.isArray(el.from) && Array.isArray(el.to)) {
+        return [el.from as [number, number], el.to as [number, number]];
+    }
+    if (Array.isArray(el.points)) {
+        const flat = el.points as number[];
+        const pairs: [number, number][] = [];
+        for (let i = 0; i + 1 < flat.length; i += 2) {
+            pairs.push([flat[i], flat[i + 1]]);
+        }
+        return pairs;
+    }
+    return [[el.x as number, el.y as number]];
+}
+
+const plainRect: RectOf = (el) => {
+    if (typeof el.x === "number" && typeof el.y === "number") {
+        return {
+            x: el.x,
+            y: el.y,
+            width: (el.width as number | undefined) ?? 0,
+            height: (el.height as number | undefined) ?? 0,
+        };
+    }
+    const points = pointsOf(el);
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+};
 
 export function fakeHost(options: Options = {}, rectOf: RectOf = plainRect) {
     const viewport = options.viewport ?? {
@@ -117,7 +143,11 @@ export function fakeHost(options: Options = {}, rectOf: RectOf = plainRect) {
             }
             case "command:scene:get-drawdy-elements":
                 return ok({
-                    drawdyElements: (cmd.req.drawdyElementIds as string[])
+                    drawdyElements: (
+                        (cmd.req.drawdyElementIds as string[] | undefined) ?? [
+                            ...elements.keys(),
+                        ]
+                    )
                         .map((id) => elements.get(id))
                         .filter((el): el is Stored => el !== undefined)
                         .map((el) => {
@@ -125,7 +155,8 @@ export function fakeHost(options: Options = {}, rectOf: RectOf = plainRect) {
                                 id: el.drawdyElementId,
                             };
                             for (const key of cmd.req.properties) {
-                                if (key in el) picked[key] = el[key];
+                                if (key === "points") picked.points = pointsOf(el);
+                                else if (key in el) picked[key] = el[key];
                             }
                             return picked;
                         }),
