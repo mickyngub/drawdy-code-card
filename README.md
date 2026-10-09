@@ -5,8 +5,8 @@ Paste code and place it on your Drawdy board as a syntax-highlighted card, like 
 ## How to use
 
 1. Click the Code Card button (a white `</>` on a green-to-blue tile) on the right of the board.
-2. On the **Code** tab, paste or type your code. Tab indents and Shift+Tab outdents, by the tab size you pick (2, 4 or 8). Press Esc to leave the box. Pick the **Language**, or leave it on **Auto detect**.
-3. Shape the card on the **Style** tab. The preview on top updates as you go:
+2. On the **Code** tab, paste or type your code, or click **Try a sample** in the empty preview. Tab indents and Shift+Tab outdents, by the tab size you pick (2, 4 or 8). Press Esc to leave the box. Pick the **Language**, or leave it on **Auto detect**.
+3. Shape the card on the **Style** tab. The preview on top updates as you go; click it to see the card across the whole panel, and click again or press Esc to go back:
    - **Theme**: GitHub Light, GitHub Dark, One Dark, Dracula, Nord, Solarized Light or Monokai.
    - **Font**: JetBrains Mono or Fira Code, a **Font size** from 10 to 24 px, and **Ligatures** on or off.
    - **Line numbers**, with the **First line number** to count from.
@@ -14,16 +14,16 @@ Paste code and place it on your Drawdy board as a syntax-highlighted card, like 
    - **Window**: three dots and a **File name** in the title bar, or none.
    - **Background**: six gradients, a solid colour you pick, or transparent. Then **Padding**, **Corner radius** and **Shadow**.
    - **Width**: fit the code, or a fixed number of columns where long lines wrap.
-4. Click **Place on board**. The card lands in the middle of your view as one image, and the board moves to it. Press ⌘Z or Ctrl+Z to take it back.
-5. To change a card later, select it on the board and click **Edit selected**. Its code and style come back into the panel. Click **Update on board** to replace it at the same spot and width, or **Place as new** for a copy. Press ⌘Z twice to undo an update. Press Escape to close the panel.
+4. Click **Place on board**. The card lands in the middle of the part of your view the panel doesn't cover, beside anything already there rather than on top of it, and is selected. The board only moves if the card doesn't fit in view. Press ⌘Z or Ctrl+Z to take it back; this works from the panel too, unless you are typing in a field.
+5. To change a card later, select it on the board and click **Edit selected**. Its code and style come back into the panel, under a banner with **Stop editing**. Click **Update on board** to replace it at the same spot and width, keeping its layer, frame, group, opacity and lock, or **Place as new** for a copy. An update is two undo steps (three for a locked card): press ⌘Z or Ctrl+Z twice to get the old version back. The board can't rotate a card it adds, so a rotated card comes back upright and the panel says so. Press Escape to close the panel; inside a field, Escape only leaves the field.
 
-Your style settings are remembered for next time. The code is not.
+Your style settings are remembered for next time. The code, file name and highlighted lines belong to each card and are not, and nothing is remembered while you edit a card from the board.
 
 ## Good to know
 
 - Network: the panel loads highlight.js 11.12.0 (`@highlightjs/cdn-assets`, checked with a subresource integrity hash) and the JetBrains Mono and Fira Code fonts (`@fontsource` 5.3.0) from jsDelivr. Your code stays in the panel and on the board. If highlight.js cannot load, the card is drawn in one colour and **Try again** loads it again. If a font cannot load, the card uses your system's monospace font.
-- The card is a picture: WebP, or PNG when the background is transparent. It is drawn at twice its board size, so it stays sharp when you zoom in. A card longer or wider than 1024 board units is drawn at less than 2x to stay within 2048 pixels; the panel shows the scale under the preview.
-- Storage: style settings are saved with Drawdy's extension storage (`kv-storage`) a moment after you change them. Each card keeps its code, language and style in its own data on the board, which is how **Edit selected** finds them.
+- The card is a picture: WebP, or PNG when the background is transparent. It is drawn at twice its board size, so it stays sharp when you zoom in. A card longer or wider than 1024 board units is drawn at less than 2x to stay within 2048 pixels (Drawdy shrinks bigger images to 2048 anyway); the panel shows the scale under the preview, rounded down. Below 1.2x it says so: long cards come out softer, so split them into two cards for sharp text.
+- Storage: style settings are saved with Drawdy's extension storage (`kv-storage`) a moment after you change them. Drawdy asks for storage and board access the first time you open the panel, not when the board loads. Each card keeps its code, language and style in its own data on the board, which is how **Edit selected** finds them.
 - Limits: 500 lines and 20,000 characters per card. Code is drawn on a monospace grid; text in a script the fonts do not cover, such as Thai or Chinese, falls back to a system font and can sit slightly off the grid.
 
 ## Third-party code
