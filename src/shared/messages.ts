@@ -24,6 +24,8 @@ export type WebviewToDriver =
     | ({ type: "update" } & RenderedCard)
     | { type: "edit-selected" }
     | { type: "stop-edit" }
+    | { type: "undo" }
+    | { type: "redo" }
     | { type: "close" };
 
 export type DriverToWebview =
@@ -32,5 +34,11 @@ export type DriverToWebview =
     | { type: "selection"; editable: boolean }
     | { type: "load"; spec: CardSpec }
     | { type: "edit-ended" }
-    | { type: "placed"; mode: "new" | "update" }
+    | { type: "placed"; mode: "new" }
+    | {
+          type: "placed";
+          mode: "update";
+          undoSteps: number;
+          rotationReset: boolean;
+      }
     | { type: "error"; message: string };

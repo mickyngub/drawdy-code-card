@@ -6,6 +6,12 @@ import type {
     SubscribeableKey,
     SubscribedDrawdyElement,
 } from "@drawdy/driver-protocol";
+import {
+    centredIn,
+    findFreeRect,
+    revealAndSelect,
+    visibleArea,
+} from "./lib/free-spot";
 import type {
     DriverToWebview,
     Rect,
@@ -19,10 +25,36 @@ import { WEBVIEW_HTML } from "./webview-html";
 const ACTION_BUTTON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="18" height="18"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs><rect x="1" y="1" width="22" height="22" rx="6" fill="url(#g)"/><path d="M9 8.5 5.5 12 9 15.5M15 8.5l3.5 3.5-3.5 3.5M13.2 7.5l-2.4 9" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 const SETTINGS_KV_KEY = "settings";
-const FLY_DURATION_MS = 350;
 const MAX_SIDE_UNITS = 20000;
 
+export const NEEDS_PERMISSION =
+    "Code Card needs permission to read the board. Reload the page and click Allow.";
+export const BOARD_FULL =
+    "The board is full: it holds at most 10,000 elements. Remove some, then try again.";
+
+const UPDATE_KEYS: SubscribeableKey[] = [
+    "x",
+    "y",
+    "width",
+    "height",
+    "rotation",
+    "opacity",
+    "layer",
+    "frameId",
+    "groupId",
+    "locked",
+];
+
 type EditTarget = { id: string };
+
+type Kept = {
+    frameId?: string;
+    groupId?: string;
+    layer?: number;
+    opacity?: number;
+};
+
+class PermissionDenied extends Error {}
 
 let requestId = 0;
 let selectionToken = 0;
@@ -36,6 +68,8 @@ let driver: {
     webviewId: string;
     webviewHtml: string | null;
     webviewOpen: boolean;
+    panelReady: boolean;
+    started: boolean;
     settings: Record<string, unknown> | null;
     editing: EditTarget | null;
 } | null = null;
@@ -57,8 +91,22 @@ function stylingCssVars(styling: ModuleStyling): string {
         .join("");
 }
 
+function reportFailure(err: unknown): void {
+    if (err instanceof PermissionDenied) {
+        post({ type: "error", message: NEEDS_PERMISSION });
+        return;
+    }
+    const detail = err instanceof Error && err.message ? err.message : "";
+    post({
+        type: "error",
+        message: `Something went wrong${
+            detail ? ` (${detail.slice(0, 80)})` : ""
+        }. Try again.`,
+    });
+}
+
 function enqueue(task: () => Promise<void>): Promise<void> {
-    const next = chain.then(task).catch(() => undefined);
+    const next = chain.then(task).catch(reportFailure);
     chain = next;
     return next;
 }
@@ -71,6 +119,33 @@ function post(message: DriverToWebview): void {
         requestId: nextRequestId(),
         req: { webviewDomId: driver.webviewId, message },
     });
+}
+
+function placeCtx() {
+    const d = driver as NonNullable<typeof driver>;
+    return {
+        issueCommand: d.issueCommand,
+        driverId: d.manifest.driverId,
+        nextRequestId,
+        webviewDomId: d.webviewId,
+    };
+}
+
+function denied(res: { res: { error?: { type: string } } }): boolean {
+    return res.res.error?.type === "unauthorized";
+}
+
+// The published protocol package predates the history commands, so they go through untyped.
+async function history(type: "undo" | "redo"): Promise<void> {
+    if (!driver) return;
+    const res = (await driver.issueCommand({
+        type: `command:history:${type}`,
+        driverId: driver.manifest.driverId,
+        requestId: nextRequestId(),
+    } as unknown as Parameters<DriverCommandIssuer>[0])) as {
+        res: { error?: { type: string } };
+    };
+    if (denied(res)) throw new PermissionDenied();
 }
 
 export const activate: DriverModule["activate"] = async ({
@@ -88,6 +163,8 @@ export const activate: DriverModule["activate"] = async ({
         webviewId: `${manifest.driverId}:webview`,
         webviewHtml: null,
         webviewOpen: false,
+        panelReady: false,
+        started: false,
         settings: null,
         editing: null,
     };
@@ -119,25 +196,7 @@ export const activate: DriverModule["activate"] = async ({
             driverId,
             requestId: nextRequestId(),
         }),
-        issueCommand({
-            type: "subscription:scene:drawdy-element-selection",
-            driverId,
-            requestId: nextRequestId(),
-        }),
     ]);
-
-    const stored = await issueCommand({
-        type: "command:kv-storage:get",
-        driverId,
-        requestId: nextRequestId(),
-        req: { key: SETTINGS_KV_KEY },
-    });
-    if (driver && stored.res.error === undefined) {
-        const restored = stored.res.value?.got?.[SETTINGS_KV_KEY];
-        if (restored && typeof restored === "object") {
-            driver.settings = restored as Record<string, unknown>;
-        }
-    }
 };
 
 export const onEvent: DriverModule["onEvent"] = async (event) => {
@@ -157,12 +216,19 @@ export const onEvent: DriverModule["onEvent"] = async (event) => {
         }
         case "subscription:dom:theme-changed": {
             driver.styling = event.body.styling;
-            if (!driver.webviewOpen) driver.webviewHtml = null;
-            post({ type: "theme", cssVars: stylingCssVars(driver.styling) });
+            if (driver.panelReady) {
+                post({
+                    type: "theme",
+                    cssVars: stylingCssVars(driver.styling),
+                });
+            }
             return;
         }
         case "subscription:scene:drawdy-element-selection": {
-            await refreshSelection(event.body.drawdyElementIds);
+            if (!driver.webviewOpen || !driver.panelReady) return;
+            await refreshSelection(event.body.drawdyElementIds).catch(
+                reportFailure
+            );
             return;
         }
         default: {
@@ -171,6 +237,7 @@ export const onEvent: DriverModule["onEvent"] = async (event) => {
     }
 };
 
+// The panel is kept alive while closed and never reloads, so a theme switch reaches it by message.
 async function openWebview(): Promise<void> {
     if (!driver) return;
     if (driver.webviewHtml === null) {
@@ -189,31 +256,73 @@ async function openWebview(): Promise<void> {
             keepStateWhenClosed: true,
         },
     });
-    if (driver) driver.webviewOpen = true;
+    if (!driver) return;
+    driver.webviewOpen = true;
+    if (driver.panelReady) {
+        post({ type: "theme", cssVars: stylingCssVars(driver.styling) });
+        await refreshSelection();
+    }
+}
+
+async function start(): Promise<void> {
+    if (!driver || driver.started) return;
+    driver.started = true;
+    const { driverId } = driver.manifest;
+    const stored = await driver.issueCommand({
+        type: "command:kv-storage:get",
+        driverId,
+        requestId: nextRequestId(),
+        req: { key: SETTINGS_KV_KEY },
+    });
+    if (driver && stored.res.error === undefined) {
+        const restored = stored.res.value?.got?.[SETTINGS_KV_KEY];
+        if (restored && typeof restored === "object") {
+            driver.settings = restored as Record<string, unknown>;
+        }
+    }
+    await driver?.issueCommand({
+        type: "subscription:scene:drawdy-element-selection",
+        driverId,
+        requestId: nextRequestId(),
+    });
+}
+
+async function onReady(): Promise<void> {
+    if (!driver) return;
+    driver.panelReady = true;
+    driver.webviewOpen = true;
+    await start();
+    if (!driver) return;
+    post({ type: "theme", cssVars: stylingCssVars(driver.styling) });
+    post({ type: "init", settings: driver.settings ?? undefined });
+    await refreshSelection();
+}
+
+async function saveSettings(settings: Record<string, unknown>): Promise<void> {
+    if (!driver) return;
+    driver.settings = settings;
+    await driver.issueCommand({
+        type: "command:kv-storage:set",
+        driverId: driver.manifest.driverId,
+        requestId: nextRequestId(),
+        req: {
+            key: SETTINGS_KV_KEY,
+            payload: { [SETTINGS_KV_KEY]: settings },
+        },
+    });
 }
 
 async function handleWebviewMessage(message: WebviewToDriver): Promise<void> {
     if (!driver) return;
     switch (message.type) {
         case "ready": {
-            driver.webviewOpen = true;
-            post({ type: "init", settings: driver.settings ?? undefined });
-            await refreshSelection();
+            await enqueue(onReady);
             return;
         }
         case "settings": {
             const settings = message.settings;
             if (typeof settings !== "object" || settings === null) return;
-            driver.settings = settings;
-            await driver.issueCommand({
-                type: "command:kv-storage:set",
-                driverId: driver.manifest.driverId,
-                requestId: nextRequestId(),
-                req: {
-                    key: SETTINGS_KV_KEY,
-                    payload: { [SETTINGS_KV_KEY]: settings },
-                },
-            });
+            await enqueue(() => saveSettings(settings));
             return;
         }
         case "place": {
@@ -230,6 +339,12 @@ async function handleWebviewMessage(message: WebviewToDriver): Promise<void> {
         }
         case "stop-edit": {
             driver.editing = null;
+            return;
+        }
+        case "undo":
+        case "redo": {
+            const step = message.type;
+            await enqueue(() => history(step));
             return;
         }
         case "close": {
@@ -265,6 +380,7 @@ async function readElements(
         requestId: nextRequestId(),
         req: { properties, drawdyElementIds: ids },
     });
+    if (denied(res)) throw new PermissionDenied();
     if (res.res.error !== undefined) return [];
     return res.res.value.drawdyElements;
 }
@@ -276,6 +392,7 @@ async function selectedIds(): Promise<string[]> {
         driverId: driver.manifest.driverId,
         requestId: nextRequestId(),
     });
+    if (denied(res)) throw new PermissionDenied();
     if (res.res.error !== undefined) return [];
     return res.res.value.drawdyElementIds;
 }
@@ -313,7 +430,7 @@ async function loadSelected(): Promise<void> {
     if (!spec) {
         post({
             type: "error",
-            message: "That card's saved code could not be read.",
+            message: "That code card's saved code could not be read.",
         });
         return;
     }
@@ -337,36 +454,29 @@ function readCard(message: RenderedCard): {
         !sizeOk(message.width) ||
         !sizeOk(message.height)
     ) {
-        post({ type: "error", message: "That card could not be read." });
+        post({ type: "error", message: "That code card could not be read." });
         return null;
     }
     return { spec, ratio: message.pixelHeight / message.pixelWidth };
 }
 
-async function viewCentredRect(width: number, height: number): Promise<Rect> {
-    if (!driver) return { x: 0, y: 0, width, height };
-    const res = await driver.issueCommand({
-        type: "command:camera:get-viewport-rect",
-        driverId: driver.manifest.driverId,
-        requestId: nextRequestId(),
-    });
-    if (res.res.error !== undefined) return { x: 0, y: 0, width, height };
-    const { rect } = res.res.value;
-    return {
-        x: Math.round(rect.x + (rect.width - width) / 2),
-        y: Math.round(rect.y + (rect.height - height) / 2),
-        width,
-        height,
-    };
+async function preferredRect(width: number, height: number): Promise<Rect> {
+    const area = await visibleArea(placeCtx());
+    const rect = area
+        ? centredIn(area, width, height)
+        : { x: 0, y: 0, width, height };
+    return { ...rect, x: Math.round(rect.x), y: Math.round(rect.y) };
 }
+
+type Added = { id: string } | { error: string };
 
 async function addCard(
     message: RenderedCard,
     spec: CardSpec,
     rect: Rect,
-    keep: { frameId?: string; layer?: number }
-): Promise<string | null> {
-    if (!driver) return null;
+    keep: Kept
+): Promise<Added> {
+    if (!driver) return { error: "" };
     const drawdyElementId = driver.generateId();
     const added = await driver.issueCommand({
         type: "command:scene:add-drawdy-elements",
@@ -385,34 +495,55 @@ async function addCard(
             ],
         },
     });
-    return added.res.error === undefined ? drawdyElementId : null;
+    if (denied(added)) throw new PermissionDenied();
+    if (added.res.error !== undefined) {
+        return { error: added.res.error.message ?? "" };
+    }
+    // Over its element limit the board adds nothing but still answers success.
+    const back = await driver.issueCommand({
+        type: "command:scene:element-rects",
+        driverId: driver.manifest.driverId,
+        requestId: nextRequestId(),
+        req: { drawdyElementIds: [drawdyElementId] },
+    });
+    if (back.res.error === undefined && back.res.value.rects.length === 0) {
+        return { error: BOARD_FULL };
+    }
+    return { id: drawdyElementId };
 }
 
 async function place(message: RenderedCard): Promise<void> {
     const card = readCard(message);
     if (!driver || !card) return;
-    const rect = await viewCentredRect(
+    const preferred = await preferredRect(
         message.width,
         message.width * card.ratio
     );
-    const id = await addCard(message, card.spec, rect, {});
+    const rect = await findFreeRect(placeCtx(), preferred);
+    const added = await addCard(message, card.spec, rect, {});
     if (!driver) return;
-    if (!id) {
-        post({ type: "error", message: "The board rejected that card." });
+    if ("error" in added) {
+        post({
+            type: "error",
+            message:
+                added.error === BOARD_FULL
+                    ? BOARD_FULL
+                    : "The board rejected that code card.",
+        });
         return;
     }
-    await driver.issueCommand({
-        type: "command:camera:fly-to-elements",
-        driverId: driver.manifest.driverId,
-        requestId: nextRequestId(),
-        req: {
-            drawdyElementIds: [id],
-            flyDurationMs: FLY_DURATION_MS,
-            zoom: 1,
-        },
-    });
+    await revealAndSelect(placeCtx(), [added.id], rect);
     post({ type: "placed", mode: "new" });
     await refreshSelection();
+}
+
+export function keptProperties(old: SubscribedDrawdyElement): Kept {
+    const keep: Kept = {};
+    if (typeof old.frameId === "string") keep.frameId = old.frameId;
+    if (typeof old.groupId === "string") keep.groupId = old.groupId;
+    if (typeof old.layer === "number") keep.layer = old.layer;
+    if (typeof old.opacity === "number") keep.opacity = old.opacity;
+    return keep;
 }
 
 async function update(message: RenderedCard): Promise<void> {
@@ -427,10 +558,7 @@ async function update(message: RenderedCard): Promise<void> {
         });
         return;
     }
-    const [old] = await readElements(
-        [editing.id],
-        ["x", "y", "width", "frameId", "layer"]
-    );
+    const [old] = await readElements([editing.id], UPDATE_KEYS);
     if (!driver) return;
     if (
         typeof old?.x !== "number" ||
@@ -443,41 +571,68 @@ async function update(message: RenderedCard): Promise<void> {
         post({
             type: "error",
             message:
-                "The card you were editing is no longer on the board. Place it as a new card.",
+                "The code card you were editing is no longer on the board. Place it as a new card.",
         });
         return;
     }
-    const keep: { frameId?: string; layer?: number } = {};
-    if (typeof old.frameId === "string") keep.frameId = old.frameId;
-    if (typeof old.layer === "number") keep.layer = old.layer;
-    await driver.issueCommand({
+    const removed = await driver.issueCommand({
         type: "command:scene:remove-drawdy-elements",
         driverId: driver.manifest.driverId,
         requestId: nextRequestId(),
         req: { drawdyElementIds: [editing.id] },
     });
-    // Same top-left and width as the old card, so a card resized on the board keeps its size.
-    const id = await addCard(
-        message,
-        card.spec,
-        {
-            x: old.x,
-            y: old.y,
-            width: old.width,
-            height: old.width * card.ratio,
-        },
-        keep
-    );
-    if (!driver) return;
-    if (!id) {
+    if (denied(removed)) throw new PermissionDenied();
+    if (removed.res.error !== undefined) {
         post({
             type: "error",
-            message:
-                "The board rejected the updated card. Press ⌘Z or Ctrl+Z to get the old one back.",
+            message: "The board would not replace that code card.",
         });
         return;
     }
-    driver.editing = { id };
-    post({ type: "placed", mode: "update" });
+    // Same top-left and width as the old card, so a card resized on the board keeps its size.
+    const rect = {
+        x: old.x,
+        y: old.y,
+        width: old.width,
+        height: old.width * card.ratio,
+    };
+    const added = await addCard(message, card.spec, rect, keptProperties(old));
+    if (!driver) return;
+    if ("error" in added) {
+        await history("undo");
+        post({
+            type: "error",
+            message:
+                added.error === BOARD_FULL
+                    ? BOARD_FULL
+                    : "The board rejected the updated code card, so the old one is back.",
+        });
+        return;
+    }
+    let undoSteps = 2;
+    if (old.locked === true) {
+        const locked = await driver.issueCommand({
+            type: "command:scene:update-drawdy-elements",
+            driverId: driver.manifest.driverId,
+            requestId: nextRequestId(),
+            req: {
+                updates: [
+                    {
+                        drawdyElementId: added.id,
+                        properties: { locked: true },
+                    },
+                ],
+            },
+        });
+        if (locked.res.error === undefined) undoSteps = 3;
+    }
+    driver.editing = { id: added.id };
+    await revealAndSelect(placeCtx(), [added.id], rect);
+    post({
+        type: "placed",
+        mode: "update",
+        undoSteps,
+        rotationReset: typeof old.rotation === "number" && old.rotation !== 0,
+    });
     await refreshSelection();
 }
