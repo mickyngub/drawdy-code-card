@@ -314,3 +314,10 @@ export function layoutCard(
 export function exportScale(width: number, height: number): number {
     return Math.min(2, MAX_SIDE / Math.max(width, height, 1));
 }
+
+export const SOFT_EXPORT_SCALE = 1.2;
+
+/** Rounds down, so a 1.998 scale reads 1.99 and never claims the full 2x. */
+export function scaleLabel(scale: number): string {
+    return `${Math.floor(scale * 100) / 100}x`;
+}

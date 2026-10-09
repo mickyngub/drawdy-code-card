@@ -76,6 +76,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
     justify-content: center;
 }
 .preview-box canvas { display: block; }
+.preview-zoom {
+    position: absolute;
+    inset: 0;
+    border: none;
+    padding: 0;
+    background: transparent;
+    cursor: zoom-in;
+}
+.preview-full {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--drawdy-background, #ffffff);
+    cursor: zoom-out;
+}
+.preview-full canvas { display: block; }
 .preview-box canvas.checker {
     background-color: #ffffff;
     background-image:
@@ -93,6 +115,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
     align-items: center;
     justify-content: center;
     text-align: center;
+    flex-direction: column;
+    gap: 8px;
     padding: 16px;
     font-size: 11px;
     color: var(--drawdy-muted-foreground, #7a7a7a);
@@ -106,7 +130,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
     align-items: center;
     gap: 6px;
 }
-.readout .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.readout .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.readout .warn { color: var(--drawdy-foreground, #111111); }
 
 .tabpanel {
     flex: 1;
@@ -265,10 +290,6 @@ footer {
     line-height: 14px;
     min-height: 28px;
     color: var(--drawdy-muted-foreground, #7a7a7a);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
 }
 .status.bad { color: var(--drawdy-destructive, #dc2626); }
 .status.good { color: var(--drawdy-success, #16a34a); }
@@ -304,9 +325,17 @@ const BODY = `
 <div class="preview-wrap">
     <div class="preview-box">
         <canvas id="preview" role="img" aria-label="Preview of the code card" hidden></canvas>
-        <div class="preview-empty" id="preview-empty">Paste or type code below to see the card here.</div>
+        <button type="button" class="preview-zoom" id="preview-zoom" aria-label="Show the code card larger" title="Show larger" hidden></button>
+        <div class="preview-empty" id="preview-empty">
+            <span id="preview-empty-text">Paste or type code on the Code tab to see the card here.</span>
+            <button type="button" class="btn small" id="sample">Try a sample</button>
+        </div>
     </div>
-    <div class="readout"><span class="grow" id="readout"></span><button type="button" class="btn small" id="retry" hidden>Try again</button></div>
+    <div class="readout"><div class="grow"><span id="readout"></span><span class="warn" id="readout-warn" hidden>Long cards come out softer. Split it into two cards for sharp text.</span></div><button type="button" class="btn small" id="retry" hidden>Try again</button></div>
+</div>
+<div class="preview-full" id="preview-full" role="dialog" aria-label="Code card preview" hidden>
+    <canvas id="preview-full-canvas" role="img" aria-label="Larger preview of the code card"></canvas>
+    <button type="button" class="btn small" id="preview-close">Close</button>
 </div>
 <section class="tabpanel" id="panel-code" role="tabpanel" aria-labelledby="tab-code">
     <div class="row">

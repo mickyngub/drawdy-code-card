@@ -7,6 +7,7 @@ import {
     exportScale,
     layoutCard,
     lineGlyphs,
+    scaleLabel,
     wrapGlyphs,
 } from "../webview/lib/layout";
 
@@ -200,4 +201,10 @@ test("cards past 1024 board units export below 2x to stay within 2048 px", () =>
     assert.equal(exportScale(500, 300), 2);
     assert.equal(exportScale(1024, 200), 2);
     assert.equal(exportScale(200, 1600), 1.28);
+});
+
+test("the export scale label rounds down, never up to the full 2x", () => {
+    assert.equal(scaleLabel(1.998), "1.99x");
+    assert.equal(scaleLabel(0.5), "0.5x");
+    assert.equal(scaleLabel(exportScale(1025, 300)), "1.99x");
 });

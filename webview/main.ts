@@ -16,7 +16,8 @@ import {
     TAB_SIZES,
     THEME_IDS,
     normaliseCode,
-    normaliseOptions,
+    rememberedStyle,
+    restoreStyle,
     type CardOptions,
     type CardSpec,
     type Chrome,
@@ -33,10 +34,13 @@ import { highlightCode, loadHighlighter } from "./highlighter";
 import { GRADIENTS } from "./lib/backgrounds";
 import { FONT_NAMES, fontStack } from "./lib/font-faces";
 import { plainLines, splitHighlightedHtml, type Line } from "./lib/hljs-html";
+import { isField, keyAction } from "./lib/keys";
 import { LANGUAGES, languageName } from "./lib/languages";
 import {
+    SOFT_EXPORT_SCALE,
     exportScale,
     layoutCard,
+    scaleLabel,
     type CardLayout,
     type Measure,
 } from "./lib/layout";
@@ -67,10 +71,23 @@ declare function acquireDrawdyApi(): DrawdyWebviewApi;
 
 const SETTINGS_DEBOUNCE_MS = 400;
 const TYPING_DELAY_MS = 150;
-const REPLY_TIMEOUT_MS = 15000;
+const REPLY_TIMEOUT_MS = 20000;
+const CONFIRM_MS = 4000;
 const PREVIEW_INSET = 16;
-const EMPTY_TEXT = "Paste or type code on the Code tab to see the card here.";
 const HIGHLIGHT_HINT = "Line numbers as shown, for example 3-5, 8.";
+const SAMPLE_LABEL = "Try a sample";
+const SAMPLE_TITLE = "debounce.ts";
+const SAMPLE_CODE = `// Wait until the typing stops, then run once.
+export function debounce<T extends unknown[]>(
+    fn: (...args: T) => void,
+    ms = 300
+) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return (...args: T) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), ms);
+    };
+}`;
 
 const api = acquireDrawdyApi();
 const byId = <T extends HTMLElement>(id: string) =>
@@ -83,8 +100,15 @@ const panelStyle = byId<HTMLElement>("panel-style");
 const banner = byId<HTMLDivElement>("edit-banner");
 const stopEditButton = byId<HTMLButtonElement>("stop-edit");
 const previewCanvas = byId<HTMLCanvasElement>("preview");
+const previewZoom = byId<HTMLButtonElement>("preview-zoom");
 const previewEmpty = byId<HTMLDivElement>("preview-empty");
+const previewEmptyText = byId<HTMLSpanElement>("preview-empty-text");
+const sampleButton = byId<HTMLButtonElement>("sample");
+const previewFull = byId<HTMLDivElement>("preview-full");
+const previewFullCanvas = byId<HTMLCanvasElement>("preview-full-canvas");
+const previewClose = byId<HTMLButtonElement>("preview-close");
 const readout = byId<HTMLSpanElement>("readout");
+const readoutWarn = byId<HTMLSpanElement>("readout-warn");
 const retryButton = byId<HTMLButtonElement>("retry");
 const languageSelect = byId<HTMLSelectElement>("language");
 const tabSizeRow = byId<HTMLDivElement>("tab-size");
@@ -93,6 +117,7 @@ const statusLine = byId<HTMLDivElement>("status");
 const editSelectedButton = byId<HTMLButtonElement>("edit-selected");
 const placeButton = byId<HTMLButtonElement>("place");
 const updateButton = byId<HTMLButtonElement>("update");
+const EMPTY_TEXT = previewEmptyText.textContent ?? "";
 
 let options: CardOptions = { ...DEFAULT_OPTIONS };
 let language = AUTO_LANGUAGE;
@@ -104,12 +129,14 @@ let current: {
     layout: CardLayout;
     lineCount: number;
     detected: string | null;
+    plain: boolean;
 } | null = null;
 let problem: string | null = null;
 let editing = false;
 let busy = false;
 let busyTimer = 0;
 let settingsTimer = 0;
+let sampleTimer = 0;
 let renderTimer = 0;
 let renderToken = 0;
 const measures = new Map<FontId, Measure>();
@@ -188,6 +215,7 @@ function updateReadout(): void {
     retryButton.hidden = highlighter !== "failed";
     if (!current) {
         readout.textContent = "";
+        readoutWarn.hidden = true;
         return;
     }
     const { layout, lineCount } = current;
@@ -198,7 +226,8 @@ function updateReadout(): void {
         )} px · ${lineCount} ${
             lineCount === 1 ? "line" : "lines"
         } · ${languageLabel()}` +
-        (scale < 2 ? ` · exports at ${scale.toFixed(1)}x` : "");
+        (scale < 2 ? ` · exports at ${scaleLabel(scale)}` : "");
+    readoutWarn.hidden = scale >= SOFT_EXPORT_SCALE;
 }
 
 function updateChrome(): void {
@@ -211,40 +240,86 @@ function updateChrome(): void {
     banner.hidden = !editing;
 }
 
-function paintPreview(layout: CardLayout, plain: boolean): void {
-    const box = previewCanvas.parentElement as HTMLElement;
-    const roomW = box.clientWidth - PREVIEW_INSET;
-    const roomH = box.clientHeight - PREVIEW_INSET;
-    if (roomW <= 0 || roomH <= 0) return;
+function paintInto(
+    canvas: HTMLCanvasElement,
+    roomW: number,
+    roomH: number,
+    layout: CardLayout,
+    plain: boolean
+): boolean {
+    if (roomW <= 0 || roomH <= 0) return false;
     const fit = Math.min(roomW / layout.width, roomH / layout.height, 1);
     const dpr = window.devicePixelRatio || 1;
     const cssW = Math.max(1, Math.round(layout.width * fit));
     const cssH = Math.max(1, Math.round(layout.height * fit));
-    previewCanvas.style.width = `${cssW}px`;
-    previewCanvas.style.height = `${cssH}px`;
-    previewCanvas.width = Math.round(cssW * dpr);
-    previewCanvas.height = Math.round(cssH * dpr);
-    previewCanvas.classList.toggle(
-        "checker",
-        options.background === "transparent"
-    );
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.classList.toggle("checker", options.background === "transparent");
     drawCard(
-        previewCanvas,
+        canvas,
         layout,
         options,
         THEMES[options.theme],
         cardFont(),
-        previewCanvas.width / layout.width,
+        canvas.width / layout.width,
         plain
     );
+    return true;
+}
+
+function paintPreview(layout: CardLayout, plain: boolean): void {
+    const box = previewCanvas.parentElement as HTMLElement;
+    const painted = paintInto(
+        previewCanvas,
+        box.clientWidth - PREVIEW_INSET,
+        box.clientHeight - PREVIEW_INSET,
+        layout,
+        plain
+    );
+    if (!painted) return;
     previewCanvas.hidden = false;
+    previewZoom.hidden = false;
     previewEmpty.hidden = true;
+    if (!previewFull.hidden) paintFull();
+}
+
+function paintFull(): void {
+    if (!current) {
+        closeFull();
+        return;
+    }
+    const closeRoom = previewClose.offsetHeight + 8;
+    paintInto(
+        previewFullCanvas,
+        window.innerWidth - 24,
+        window.innerHeight - 24 - closeRoom,
+        current.layout,
+        current.plain
+    );
+}
+
+function openFull(): void {
+    if (!current) return;
+    previewFull.hidden = false;
+    paintFull();
+    previewClose.focus();
+}
+
+function closeFull(): void {
+    if (previewFull.hidden) return;
+    previewFull.hidden = true;
+    if (!previewZoom.hidden) previewZoom.focus();
 }
 
 function showEmpty(text: string): void {
     previewCanvas.hidden = true;
+    previewZoom.hidden = true;
     previewEmpty.hidden = false;
-    previewEmpty.textContent = text;
+    previewEmptyText.textContent = text;
+    sampleButton.hidden = cardCode() !== "";
+    closeFull();
 }
 
 function scheduleRender(delay = 0): void {
@@ -273,18 +348,25 @@ async function render(): Promise<void> {
     if (token !== renderToken) return;
     const { lines, detected, plain } = tokenise(code);
     const layout = layoutCard(lines, options, measureFor(options.font));
-    current = { layout, lineCount: lines.length, detected };
+    current = { layout, lineCount: lines.length, detected, plain };
     paintPreview(layout, plain);
     updateReadout();
     updateChrome();
 }
 
+// A card loaded for editing brings its own style, which must not become the remembered one.
 function queueSettings(): void {
     if (settingsTimer) clearTimeout(settingsTimer);
-    settingsTimer = setTimeout(() => {
-        settingsTimer = 0;
-        send({ type: "settings", settings: { options } });
-    }, SETTINGS_DEBOUNCE_MS) as unknown as number;
+    settingsTimer = 0;
+    if (editing) return;
+    settingsTimer = setTimeout(flushSettings, SETTINGS_DEBOUNCE_MS) as unknown as number;
+}
+
+function flushSettings(): void {
+    if (settingsTimer) clearTimeout(settingsTimer);
+    settingsTimer = 0;
+    if (editing) return;
+    send({ type: "settings", settings: { options: rememberedStyle(options) } });
 }
 
 const controls: {
@@ -521,9 +603,13 @@ function buildStyleControls(): void {
     makeRule(parent);
     const resetRow = el("div", "row", parent);
     el("span", "note grow", resetRow).textContent =
-        "Style settings are remembered for next time.";
+        "Style settings are remembered for next time, except the file name and highlighted lines.";
     button(resetRow, "btn small", "Reset style", () => {
-        options = { ...DEFAULT_OPTIONS };
+        options = {
+            ...DEFAULT_OPTIONS,
+            title: options.title,
+            highlight: options.highlight,
+        };
         pushControls();
         scheduleRender();
         queueSettings();
@@ -634,42 +720,89 @@ function selectTab(which: "code" | "style", focus = false): void {
 function setBusy(next: boolean): void {
     busy = next;
     if (busyTimer) clearTimeout(busyTimer);
-    busyTimer = next
-        ? (setTimeout(
-              () => setBusy(false),
-              REPLY_TIMEOUT_MS
-          ) as unknown as number)
-        : 0;
+    busyTimer = 0;
     updateChrome();
+}
+
+// The reply clock starts once the card is sent, so a slow highlighter or font load can't re-enable the button mid-send.
+function awaitReply(): void {
+    if (busyTimer) clearTimeout(busyTimer);
+    busyTimer = setTimeout(() => {
+        busyTimer = 0;
+        setBusy(false);
+        setStatus("Drawdy didn't answer. Try again.", "bad");
+    }, REPLY_TIMEOUT_MS) as unknown as number;
 }
 
 async function sendCard(mode: "place" | "update"): Promise<void> {
     const code = cardCode();
     if (busy || code === "" || limitProblem(code)) return;
     setBusy(true);
-    setStatus(mode === "update" ? "Updating the card…" : "Placing…");
-    if (highlighter === "loading") await highlighterReady;
-    await loadFont(options.font, code);
-    const { lines, plain } = tokenise(code);
-    const layout = layoutCard(lines, options, measureFor(options.font));
-    const snapshot = { ...options };
-    const theme = THEMES[snapshot.theme];
-    const font = cardFont();
-    const encoded = encodeCard(
-        layout.width,
-        layout.height,
-        snapshot.background === "transparent",
-        (canvas, scale) =>
-            drawCard(canvas, layout, snapshot, theme, font, scale, plain)
-    );
-    const spec: CardSpec = { code, language, options: snapshot };
-    send({
-        type: mode,
-        ...encoded,
-        width: layout.width,
-        height: layout.height,
-        spec,
-    });
+    setStatus(mode === "update" ? "Updating…" : "Placing…");
+    try {
+        if (highlighter === "loading") await highlighterReady;
+        await loadFont(options.font, code);
+        const { lines, plain } = tokenise(code);
+        const layout = layoutCard(lines, options, measureFor(options.font));
+        const snapshot = { ...options };
+        const theme = THEMES[snapshot.theme];
+        const font = cardFont();
+        const encoded = encodeCard(
+            layout.width,
+            layout.height,
+            snapshot.background === "transparent",
+            (canvas, scale) =>
+                drawCard(canvas, layout, snapshot, theme, font, scale, plain)
+        );
+        const spec: CardSpec = { code, language, options: snapshot };
+        send({
+            type: mode,
+            ...encoded,
+            width: layout.width,
+            height: layout.height,
+            spec,
+        });
+        awaitReply();
+    } catch {
+        setBusy(false);
+        setStatus("The code card could not be drawn. Try again.", "bad");
+    }
+}
+
+function loadSample(): void {
+    if (editing) {
+        setEditing(false);
+        send({ type: "stop-edit" });
+    }
+    codeBox.value = SAMPLE_CODE;
+    language = "typescript";
+    languageSelect.value = language;
+    if (options.title.trim() === "") {
+        options = { ...options, title: SAMPLE_TITLE };
+        pushControls();
+    }
+    selectTab("code");
+    scheduleRender();
+    setStatus("Loaded a sample. Click Place on board to add it.");
+}
+
+function resetSampleButton(): void {
+    if (sampleTimer) clearTimeout(sampleTimer);
+    sampleTimer = 0;
+    sampleButton.textContent = SAMPLE_LABEL;
+}
+
+function onSampleClick(): void {
+    if (codeBox.value.trim() !== "" && !sampleTimer) {
+        sampleButton.textContent = "Replace your data?";
+        sampleTimer = setTimeout(
+            resetSampleButton,
+            CONFIRM_MS
+        ) as unknown as number;
+        return;
+    }
+    resetSampleButton();
+    loadSample();
 }
 
 function setEditing(next: boolean): void {
@@ -719,8 +852,11 @@ function wire(): void {
     stopEditButton.addEventListener("click", () => {
         setEditing(false);
         send({ type: "stop-edit" });
-        setStatus("Stopped editing. Place on board adds a new card.");
+        setStatus("Stopped editing. Place on board adds a new code card.");
     });
+    sampleButton.addEventListener("click", onSampleClick);
+    previewZoom.addEventListener("click", openFull);
+    previewFull.addEventListener("click", closeFull);
     retryButton.addEventListener("click", () => {
         setStatus("Loading the highlighter…");
         startHighlighter();
@@ -735,17 +871,38 @@ function wire(): void {
         });
     }
     document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape") return;
-        send({ type: "close" });
+        if (event.key === "Escape" && !previewFull.hidden) {
+            event.preventDefault();
+            closeFull();
+            return;
+        }
+        const action = keyAction(event, isField(event.target));
+        if (!action) return;
+        event.preventDefault();
+        if (action === "blur") (event.target as HTMLElement).blur();
+        else send({ type: action });
     });
     window.addEventListener("resize", () => scheduleRender());
+}
+
+function placedText(
+    message: Extract<DriverToWebview, { type: "placed" }>
+): string {
+    if (message.mode === "new") {
+        return "Placed the code card. Press ⌘Z or Ctrl+Z to undo.";
+    }
+    const times =
+        message.undoSteps === 2 ? "twice" : `${message.undoSteps} times`;
+    return `Updated the code card${
+        message.rotationReset ? " (rotation reset)" : ""
+    }. Press ⌘Z or Ctrl+Z ${times} to get the old version back.`;
 }
 
 function handle(message: DriverToWebview): void {
     switch (message.type) {
         case "init": {
             const raw = message.settings?.options;
-            if (raw) options = normaliseOptions(raw);
+            if (raw) options = restoreStyle(options, raw);
             pushControls();
             scheduleRender();
             return;
@@ -761,6 +918,8 @@ function handle(message: DriverToWebview): void {
         }
         case "load": {
             const spec = message.spec;
+            flushSettings();
+            resetSampleButton();
             codeBox.value = spec.code;
             language = LANGUAGES.some(([id]) => id === spec.language)
                 ? spec.language
@@ -783,17 +942,9 @@ function handle(message: DriverToWebview): void {
         case "placed": {
             setBusy(false);
             const fallback = fontFailed(options.font)
-                ? ` ${
-                      FONT_NAMES[options.font]
-                  } could not load, so it used your system's monospace font.`
+                ? ` ${FONT_NAMES[options.font]} didn't load, so it used a system font.`
                 : "";
-            setStatus(
-                (message.mode === "update"
-                    ? "Updated the card on the board. Press ⌘Z twice to get the old one back."
-                    : "Placed the card. Press ⌘Z or Ctrl+Z to undo.") +
-                    fallback,
-                fallback ? "" : "good"
-            );
+            setStatus(placedText(message) + fallback, fallback ? "" : "good");
             return;
         }
         case "error": {
