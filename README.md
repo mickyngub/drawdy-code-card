@@ -1,50 +1,43 @@
 # Code Card
 
-Paste code and place it on your Drawdy board as a syntax-highlighted card, like ray.so or Carbon, that you can open and edit again later.
+Turn a code snippet into a beautiful, syntax-highlighted card on your Drawdy board, like ray.so or Carbon. The card remembers its code, so when the code changes you edit the card instead of making a new screenshot.
+
+## What it's for
+
+- **Explaining code** in a review, a workshop or an architecture board, with the lines that matter highlighted.
+- **Slides and docs**: a card with a window frame and a file name reads far better than a screenshot of your editor.
+- **Snippets that stay editable**: fix a typo or update an example months later, in place.
 
 ## How to use
 
-1. Click the Code Card button (a white `</>` on a green-to-blue tile) on the right of the board.
-2. On the **Code** tab, paste or type your code, or click **Try a sample** in the empty preview. Tab indents and Shift+Tab outdents, by the tab size you pick (2, 4 or 8). Press Esc to leave the box. Pick the **Language**, or leave it on **Auto detect**.
-3. Shape the card on the **Style** tab. The preview on top updates as you go; click it to see the card across the whole panel, and click again or press Esc to go back:
-   - **Theme**: GitHub Light, GitHub Dark, One Dark, Dracula, Nord, Solarized Light or Monokai.
-   - **Font**: JetBrains Mono or Fira Code, a **Font size** from 10 to 24 px, and **Ligatures** on or off.
-   - **Line numbers**, with the **First line number** to count from.
-   - **Highlight lines**: numbers and ranges as shown in the gutter, for example `3-5, 8`.
-   - **Window**: three dots and a **File name** in the title bar, or none.
-   - **Background**: six gradients, a solid colour you pick, or transparent. Then **Padding**, **Corner radius** and **Shadow**.
-   - **Width**: fit the code, or a fixed number of columns where long lines wrap.
-4. Click **Place on board**. The card lands in the middle of the part of your view the panel doesn't cover, beside anything already there rather than on top of it, and is selected. The board only moves if the card doesn't fit in view. Press ⌘Z or Ctrl+Z to take it back; this works from the panel too, unless you are typing in a field.
-5. To change a card later, select it on the board and click **Edit selected**. Its code and style come back into the panel, under a banner with **Stop editing**. Click **Update on board** to replace it at the same spot and width, keeping its layer, frame, group, opacity and lock, or **Place as new** for a copy. An update is two undo steps (three for a locked card): press ⌘Z or Ctrl+Z twice to get the old version back. The board can't rotate a card it adds, so a rotated card comes back upright and the panel says so. Press Escape to close the panel; inside a field, Escape only leaves the field.
+1. Click the **Code Card** button on the right of the board.
+2. On the **Code** tab, paste your code, or click **Try a sample**. The language is detected for you, or you can pick it.
+3. On the **Style** tab, choose a theme, a font and a background. The preview updates as you go; click it to see the card at full size.
+4. Click **Place on board**. The card lands in view, next to anything already there rather than on top of it.
+5. To change it later, select the card, click **Edit selected**, make your changes and click **Update on board**. **Place as new** makes a copy instead.
 
-Your style settings are remembered for next time. The code, file name and highlighted lines belong to each card and are not, and nothing is remembered while you edit a card from the board.
+## Style options
 
-## Good to know
+- **Themes**: GitHub Light, GitHub Dark, One Dark, Dracula, Nord, Solarized Light and Monokai.
+- **Fonts**: JetBrains Mono or Fira Code, 10 to 24 px, with ligatures on or off.
+- **Line numbers**, starting from any number, and **highlighted lines** such as `3-5, 8`.
+- **Window**: a title bar with three dots and a file name, or none.
+- **Background**: six gradients, a solid colour or transparent, with padding, rounded corners and a shadow.
+- **Width**: fit the code, or wrap long lines at a set number of columns.
 
-- Network: the panel loads highlight.js 11.12.0 (`@highlightjs/cdn-assets`, checked with a subresource integrity hash) and the JetBrains Mono and Fira Code fonts (`@fontsource` 5.3.0) from jsDelivr. Your code stays in the panel and on the board. If highlight.js cannot load, the card is drawn in one colour and **Try again** loads it again. If a font cannot load, the card uses your system's monospace font.
-- The card is a picture: WebP, or PNG when the background is transparent. It is drawn at twice its board size, so it stays sharp when you zoom in. A card longer or wider than 1024 board units is drawn at less than 2x to stay within 2048 pixels (Drawdy shrinks bigger images to 2048 anyway); the panel shows the scale under the preview, rounded down. Below 1.2x it says so: long cards come out softer, so split them into two cards for sharp text.
-- Storage: style settings are saved with Drawdy's extension storage (`kv-storage`) a moment after you change them. Drawdy asks for storage and board access the first time you open the panel, not when the board loads. Each card keeps its code, language and style in its own data on the board, which is how **Edit selected** finds them.
-- Limits: 500 lines and 20,000 characters per card. Code is drawn on a monospace grid; text in a script the fonts do not cover, such as Thai or Chinese, falls back to a system font and can sit slightly off the grid.
+## Tips
 
-## Third-party code
+- Tab and Shift+Tab indent and outdent inside the code box.
+- Cards are drawn at twice their board size, so text stays crisp when you zoom in. For very long code, two cards stay sharper than one.
+- A card holds up to 500 lines and 20,000 characters.
+- ⌘Z or Ctrl+Z takes a card back, from the panel too. An update takes two undo steps to reverse.
 
-- highlight.js (BSD-3-Clause) is loaded at runtime from jsDelivr, not bundled.
-- JetBrains Mono and Fira Code are under the SIL Open Font Licence 1.1 and are loaded at runtime from jsDelivr.
-- The theme colours follow highlight.js's own GitHub, GitHub Dark, Atom One Dark, Nord and Solarized Light styles (BSD-3-Clause) and the published Dracula (MIT) and Monokai palettes.
+## Privacy
 
-## Licence
+- Your code stays in the panel and on your board. The panel downloads the highlighter and the two fonts from jsDelivr.
+- Your style choices are saved for next time. The code itself lives only in the cards you place.
 
-This extension's code is [MIT](LICENSE).
+## Credits and licence
 
-## Development
-
-```bash
-npm install
-npm test
-npm run typecheck
-npm run dev          # dev server on :5198; in Drawdy run ⌘K → "Add extension dev server" on a local board
-npm run build        # regenerates src/webview-html.ts and dist/*.drawdyx
-npm run preflight    # before submitting: committed, built, pushed, under Drawdy's limits, above the live version
-```
-
-Drawdy builds published versions from this repository's `src/index.ts`, so commit `src/webview-html.ts` after `npm run build`. Bump `driverVersion` in `manifest.json` for every release and add it to `CHANGELOG.md`. `npm test` holds the manifest and listing files to Drawdy's submission rules (a description of at most 500 characters, an icon of at most 256 KB, only `@drawdy/driver-protocol` imported from outside the repository).
+- Highlighting by [highlight.js](https://highlightjs.org) (BSD-3-Clause). Fonts: JetBrains Mono and Fira Code (SIL Open Font Licence 1.1). Theme colours follow the highlight.js styles, Dracula (MIT) and Monokai.
+- The extension's code is [MIT](https://github.com/mickyngub/drawdy-code-card/blob/main/LICENSE). Building it yourself? See [DEVELOPMENT.md](https://github.com/mickyngub/drawdy-code-card/blob/main/DEVELOPMENT.md).
