@@ -1,7 +1,7 @@
 {
     "driverId": "mickyngub.code-card",
     "driverName": "Code Card",
-    "driverVersion": "1.0.1",
+    "driverVersion": "1.0.2",
     "description": "Paste code and place it on the board as a syntax-highlighted card, like ray.so or Carbon. Pick the language or let it detect one, then choose a theme (GitHub Light and Dark, One Dark, Dracula, Nord, Solarized Light, Monokai), JetBrains Mono or Fira Code with or without ligatures, line numbers, highlighted lines, a window with a file name, background, padding, corners, shadow and width. Select a placed card later to edit it and update it in place.",
     "icon": "icon.png",
     "main": "main.js",

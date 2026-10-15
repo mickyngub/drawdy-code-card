@@ -2,6 +2,8 @@
 
 Turn a code snippet into a beautiful, syntax-highlighted card on your Drawdy board, like ray.so or Carbon. The card remembers its code, so when the code changes you edit the card instead of making a new screenshot.
 
+![Pasting a TypeScript function into Code Card, switching the theme to Dracula and placing the card on the board.](https://raw.githubusercontent.com/mickyngub/drawdy-code-card/main/docs/media/code-card.gif)
+
 ## What it's for
 
 - **Explaining code** in a review, a workshop or an architecture board, with the lines that matter highlighted.
