@@ -32,6 +32,16 @@ import { encodeCard } from "./export";
 import { fontFailed, loadFont, makeMeasure } from "./fonts";
 import { highlightCode, loadHighlighter } from "./highlighter";
 import { GRADIENTS } from "./lib/backgrounds";
+import {
+    CHIP_ROW,
+    COLOUR_INPUT,
+    FIELD,
+    FOOTER_SECONDARY,
+    HINT,
+    LABEL_ROW,
+    PRIMARY,
+    SECONDARY,
+} from "./lib/classes";
 import { FONT_NAMES, fontStack } from "./lib/font-faces";
 import { plainLines, splitHighlightedHtml, type Line } from "./lib/hljs-html";
 import { isField, keyAction } from "./lib/keys";
@@ -74,6 +84,8 @@ const TYPING_DELAY_MS = 150;
 const REPLY_TIMEOUT_MS = 20000;
 const CONFIRM_MS = 4000;
 const PREVIEW_INSET = 16;
+const CLEAR_SWATCH =
+    "bg-white bg-[linear-gradient(45deg,transparent_45%,var(--color-danger)_45%,var(--color-danger)_55%,transparent_55%)]";
 const HIGHLIGHT_HINT = "Line numbers as shown, for example 3-5, 8.";
 const SAMPLE_LABEL = "Try a sample";
 const SAMPLE_TITLE = "debounce.ts";
@@ -147,7 +159,7 @@ function send(message: WebviewToDriver): void {
 
 function setStatus(text: string, tone: "" | "good" | "bad" = ""): void {
     statusLine.textContent = text;
-    statusLine.className = `status${tone ? ` ${tone}` : ""}`;
+    statusLine.dataset.tone = tone;
 }
 
 function measureFor(font: FontId): Measure {
@@ -235,7 +247,7 @@ function updateChrome(): void {
     placeButton.disabled = !ready || busy;
     updateButton.disabled = !ready || busy;
     placeButton.textContent = editing ? "Place as new" : "Place on board";
-    placeButton.classList.toggle("primary", !editing);
+    placeButton.className = editing ? FOOTER_SECONDARY : PRIMARY;
     updateButton.hidden = !editing;
     banner.hidden = !editing;
 }
@@ -256,7 +268,10 @@ function paintInto(
     canvas.style.height = `${cssH}px`;
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
-    canvas.classList.toggle("checker", options.background === "transparent");
+    canvas.toggleAttribute(
+        "data-checker",
+        options.background === "transparent"
+    );
     drawCard(
         canvas,
         layout,
@@ -359,7 +374,10 @@ function queueSettings(): void {
     if (settingsTimer) clearTimeout(settingsTimer);
     settingsTimer = 0;
     if (editing) return;
-    settingsTimer = setTimeout(flushSettings, SETTINGS_DEBOUNCE_MS) as unknown as number;
+    settingsTimer = setTimeout(
+        flushSettings,
+        SETTINGS_DEBOUNCE_MS
+    ) as unknown as number;
 }
 
 function flushSettings(): void {
@@ -413,8 +431,8 @@ function syncDependents(): void {
                   .map((part) => `"${part}"`)
                   .join(", ")}. ${HIGHLIGHT_HINT}`
             : HIGHLIGHT_HINT;
-        controls.highlightNote.classList.toggle("bad", bad);
-        controls.highlight.input.classList.toggle("bad", bad);
+        controls.highlightNote.dataset.tone = bad ? "bad" : "";
+        controls.highlight.input.setAttribute("aria-invalid", String(bad));
     }
     syncCodeBox();
 }
@@ -470,10 +488,10 @@ function buildStyleControls(): void {
         (fontSize) => commit({ fontSize })
     );
 
-    const shown = el("div", "field", parent);
-    const shownHead = el("div", "field-head", shown);
-    el("span", "label", shownHead).textContent = "Text";
-    const toggles = el("div", "seg", shown);
+    const shown = el("div", FIELD, parent);
+    const shownHead = el("div", LABEL_ROW, shown);
+    el("span", undefined, shownHead).textContent = "Text";
+    const toggles = el("div", CHIP_ROW, shown);
     toggles.setAttribute("role", "group");
     toggles.setAttribute("aria-label", "Text");
     controls.ligatures = makeToggle(
@@ -503,7 +521,7 @@ function buildStyleControls(): void {
         MAX_HIGHLIGHT_LENGTH,
         (highlight) => commit({ highlight })
     );
-    controls.highlightNote = el("p", "note", controls.highlight.wrap);
+    controls.highlightNote = el("p", HINT, controls.highlight.wrap);
     controls.highlightNote.id = "highlight-note";
     controls.highlight.input.setAttribute("aria-describedby", "highlight-note");
 
@@ -540,14 +558,14 @@ function buildStyleControls(): void {
                 value: "transparent",
                 label: "Transparent",
                 css: "",
-                className: "clear",
+                className: CLEAR_SWATCH,
             },
         ],
         options.background,
         (background) =>
             commit({ background: background as CardOptions["background"] })
     );
-    const picker = el("input", undefined, controls.background.row);
+    const picker = el("input", COLOUR_INPUT, controls.background.row);
     picker.type = "color";
     picker.value = options.solid;
     picker.setAttribute("aria-label", "Solid colour, any colour");
@@ -601,10 +619,10 @@ function buildStyleControls(): void {
     );
 
     makeRule(parent);
-    const resetRow = el("div", "row", parent);
-    el("span", "note grow", resetRow).textContent =
+    const resetRow = el("div", "flex items-center gap-3", parent);
+    el("span", `${HINT} min-w-0 flex-1`, resetRow).textContent =
         "Style settings are remembered for next time, except the file name and highlighted lines.";
-    button(resetRow, "btn small", "Reset style", () => {
+    button(resetRow, SECONDARY, "Reset style", () => {
         options = {
             ...DEFAULT_OPTIONS,
             title: options.title,
@@ -817,7 +835,7 @@ function startHighlighter(): void {
         highlighter = ok ? "ready" : "failed";
         cache = null;
         if (ok) {
-            if (statusLine.classList.contains("bad")) setStatus("");
+            if (statusLine.dataset.tone === "bad") setStatus("");
         } else {
             setStatus(
                 "Could not load the highlighter from jsDelivr, so the card is one colour. Check your connection, then click Try again.",

@@ -1,3 +1,19 @@
+import {
+    CHIP,
+    FIELD,
+    INPUT,
+    LABEL_ROW,
+    NUMBER,
+    RULE,
+    SEGMENT,
+    SEGMENTED,
+    SELECT,
+    SELECT_CHEVRON,
+    SLIDER,
+    SWATCH,
+    VALUE,
+} from "./lib/classes";
+
 export function el<K extends keyof HTMLElementTagNameMap>(
     tag: K,
     className?: string,
@@ -28,9 +44,9 @@ export function button(
 }
 
 function field(parent: HTMLElement, label: string, forId?: string) {
-    const wrap = el("div", "field", parent);
-    const head = el("div", "field-head", wrap);
-    const text = el(forId ? "label" : "span", "label", head);
+    const wrap = el("div", FIELD, parent);
+    const head = el("div", LABEL_ROW, wrap);
+    const text = el(forId ? "label" : "span", undefined, head);
     text.textContent = label;
     if (forId) (text as HTMLLabelElement).htmlFor = forId;
     return { wrap, head };
@@ -40,6 +56,13 @@ let uid = 0;
 const nextId = (stem: string) => `${stem}-${++uid}`;
 
 export type Control<T> = { set(value: T): void };
+
+function setFill(input: HTMLInputElement): void {
+    const min = Number(input.min);
+    const max = Number(input.max);
+    const fill = ((Number(input.value) - min) / (max - min)) * 100;
+    input.style.setProperty("--fill", `${fill}%`);
+}
 
 export type SliderSpec = {
     label: string;
@@ -56,8 +79,8 @@ export function makeSlider(
     onInput: (value: number) => void
 ): Control<number> {
     const { wrap, head } = field(parent, spec.label);
-    const value = el("span", "value", head);
-    const input = el("input", undefined, wrap);
+    const value = el("span", VALUE, head);
+    const input = el("input", SLIDER, wrap);
     input.type = "range";
     input.min = String(spec.min);
     input.max = String(spec.max);
@@ -65,6 +88,7 @@ export function makeSlider(
     input.setAttribute("aria-label", spec.label);
     const show = (v: number) => {
         value.textContent = `${v} ${spec.unit}`;
+        setFill(input);
     };
     input.value = String(initial);
     show(initial);
@@ -88,7 +112,7 @@ export function makeSegmented<T extends string | number>(
     onPick: (value: T) => void
 ): Control<T> {
     const buttons = options.map(([value, caption]) => {
-        const node = button(row, "", caption, () => {
+        const node = button(row, SEGMENT, caption, () => {
             paint(value);
             onPick(value);
         });
@@ -96,9 +120,10 @@ export function makeSegmented<T extends string | number>(
     });
     const paint = (current: T) => {
         for (const entry of buttons) {
-            const on = entry.value === current;
-            entry.node.classList.toggle("on", on);
-            entry.node.setAttribute("aria-pressed", String(on));
+            entry.node.setAttribute(
+                "aria-pressed",
+                String(entry.value === current)
+            );
         }
     };
     paint(initial);
@@ -113,7 +138,7 @@ export function makeSegmentedField<T extends string | number>(
     onPick: (value: T) => void
 ): Control<T> & { wrap: HTMLElement; row: HTMLElement } {
     const { wrap } = field(parent, label);
-    const row = el("div", "seg", wrap);
+    const row = el("div", SEGMENTED, wrap);
     row.setAttribute("role", "group");
     row.setAttribute("aria-label", label);
     const control = makeSegmented(row, options, initial, onPick);
@@ -127,13 +152,12 @@ export function makeToggle(
     onChange: (value: boolean) => void
 ): Control<boolean> {
     let value = initial;
-    const node = button(parent, "", caption, () => {
+    const node = button(parent, CHIP, caption, () => {
         paint(!value);
         onChange(value);
     });
     const paint = (next: boolean) => {
         value = next;
-        node.classList.toggle("on", next);
         node.setAttribute("aria-pressed", String(next));
     };
     paint(initial);
@@ -149,7 +173,9 @@ export function makeSelect(
 ): Control<string> {
     const id = nextId("select");
     const { wrap } = field(parent, label, id);
-    const select = el("select", "select", wrap);
+    const box = el("div", "relative", wrap);
+    const select = el("select", SELECT, box);
+    box.insertAdjacentHTML("beforeend", SELECT_CHEVRON);
     select.id = id;
     for (const [value, caption] of options) {
         const option = el("option", undefined, select);
@@ -174,7 +200,7 @@ export function makeTextInput(
 ): Control<string> & { input: HTMLInputElement; wrap: HTMLElement } {
     const id = nextId("text");
     const { wrap } = field(parent, label, id);
-    const input = el("input", "text", wrap);
+    const input = el("input", INPUT, wrap);
     input.id = id;
     input.type = "text";
     input.placeholder = placeholder;
@@ -197,9 +223,9 @@ export function makeNumberInput(
     initial: number,
     onChange: (value: number) => void
 ): Control<number> & { input: HTMLInputElement } {
-    const wrap = el("label", "row lbl", parent);
+    const wrap = el("label", LABEL_ROW, parent);
     wrap.textContent = label;
-    const input = el("input", "number", wrap);
+    const input = el("input", NUMBER, wrap);
     input.type = "number";
     input.min = String(range.min);
     input.max = String(range.max);
@@ -246,13 +272,13 @@ export function makeSwatchRow(
     nodes: Map<string, HTMLButtonElement>;
 } {
     const { wrap } = field(parent, label);
-    const row = el("div", "swatches", wrap);
+    const row = el("div", "flex flex-wrap items-center gap-2", wrap);
     row.setAttribute("role", "group");
     row.setAttribute("aria-label", label);
     const buttons = swatches.map((swatch) => {
         const node = button(
             row,
-            `swatch${swatch.className ? ` ${swatch.className}` : ""}`,
+            `${SWATCH}${swatch.className ? ` ${swatch.className}` : ""}`,
             "",
             () => {
                 paint(swatch.value);
@@ -265,9 +291,10 @@ export function makeSwatchRow(
     });
     const paint = (current: string) => {
         for (const entry of buttons) {
-            const on = entry.value === current;
-            entry.node.classList.toggle("on", on);
-            entry.node.setAttribute("aria-pressed", String(on));
+            entry.node.setAttribute(
+                "aria-pressed",
+                String(entry.value === current)
+            );
         }
     };
     paint(initial);
@@ -279,5 +306,5 @@ export function makeSwatchRow(
 }
 
 export function makeRule(parent: HTMLElement): void {
-    el("div", "rule", parent);
+    el("div", RULE, parent);
 }
