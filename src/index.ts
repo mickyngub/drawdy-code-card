@@ -20,9 +20,7 @@ import type {
 } from "./shared/messages";
 import { normaliseSpec, type CardSpec } from "./shared/spec";
 import { WEBVIEW_HTML } from "./webview-html";
-
-// Drawdy shows this through <img>, where currentColor is black, so the colours are explicit.
-const ACTION_BUTTON_SVG = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="18" height="18"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient></defs><rect x="1" y="1" width="22" height="22" rx="6" fill="url(#g)"/><path d="M9 8.5 5.5 12 9 15.5M15 8.5l3.5 3.5-3.5 3.5M13.2 7.5l-2.4 9" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+import { ACTION_BUTTON_SVG } from "./action-button";
 
 const SETTINGS_KV_KEY = "settings";
 const MAX_SIDE_UNITS = 20000;
