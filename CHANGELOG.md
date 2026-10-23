@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3
+
+- the panel now uses Drawdy's own colours and font
+- Code and Style are tabs, the zoom button on the preview is always visible, and tab size shows the selected option in grey instead of lime
+- the place button sits in a full-width footer
+
 ## 1.0.2
 
 - a short GIF on the listing page that shows pasting code, switching the theme and placing the card in action
